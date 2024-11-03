@@ -49,7 +49,7 @@ void createOasisFile() {
 int main(int argc, char *argv[])
 {
 
-#if 0
+#if 1
 
     createOasisFile();
 
@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
     std::cout << "hello world." << std::endl;
     return app.exec();
 
-#elif 1
+#elif 0
 
     createOasisFile();
 
