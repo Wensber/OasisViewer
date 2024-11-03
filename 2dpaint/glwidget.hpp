@@ -61,20 +61,33 @@ public:
 
 public slots:
     void onZoomFull() {
-        setZoomFactor(1.0);
-        setPannedDist(QVector2D(0, 0));
-        setPanDiff(QVector2D(0, 0));
-        rotationAxis = QVector3D();
-        angularSpeed = 0;
-        rotation = QQuaternion();
+        model.setToIdentity();
         update();
     }
     void onZoomInHalf() {
-        setZoomFactor(getZoomFactor()*2.0); //sqrt(2.0));
+#if 1
+        const layout::dBox& vbox = getViewBox();
+        QRectF mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                             vbox.getWidth(), vbox.getHeight()));
+        model.translate(-mapped.center().x(), mapped.center().y());
+        model.scale(2.0, 2.0);
+        model.translate(mapped.center().x()/2.0, -mapped.center().y()/2.0);
+#else
+        model.scale(2.0, 2.0);
+#endif
         update();
     }
     void onZoomOut2X() {
-        setZoomFactor(getZoomFactor()*0.5); //sqrt(0.5));
+#if 1
+        const layout::dBox& vbox = getViewBox();
+        QRectF mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                             vbox.getWidth(), vbox.getHeight()));
+        model.translate(-mapped.center().x(), mapped.center().y());
+        model.scale(0.5, 0.5);
+        model.translate(mapped.center().x()*2.0, -mapped.center().y()*2.0);
+#else
+        model.scale(0.5, 0.5);
+#endif
         update();
     }
 
@@ -125,12 +138,17 @@ protected:
     void timerEvent(QTimerEvent *e) override;
 
     QVector3D getEyeCoords() {
-        const layout::dBox& vbox = getViewBox();
-        layout::dPoint ctr = vbox.center();
-        QVector2D panned = getPannedDist() + getPanDiff();
-        double dist = std::max(vbox.getWidth(), vbox.getHeight());
-        return QVector3D(-ctr.x()+dist*panned.x()/width(),
-                         -ctr.y()-dist*panned.y()/height(),
+        const layout::dLayout* activeLayout = getLayoutManager().getActiveLayout();
+        double dist = 1.0;
+        layout::dPoint ctr(0.0, 0.0);
+        if (activeLayout) {
+            layout::dBox vbox = activeLayout->getBBox();
+            vbox *= 1.01;
+            ctr = vbox.center();
+            dist = std::max(vbox.getWidth(), vbox.getHeight());
+        }
+        return QVector3D(-ctr.x(),
+                         -ctr.y(),
                          -dist*0.5 / std::tan((fov/2.0)*PI/180.0));
     }
 
@@ -178,6 +196,8 @@ private:
     QOpenGLTexture *texture = nullptr;
 
     QMatrix4x4 projection;
+    QMatrix4x4 model;
+    QMatrix4x4 mousePressModel; // model value at mousePressEvent.
 
     QPointF mousePressPos;
     QVector3D rotationAxis;
@@ -195,6 +215,5 @@ private:
     QVector2D pannedDist;
     QVector2D panDiff;
 };
-
 
 #endif

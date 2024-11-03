@@ -33,6 +33,7 @@ public:
 
 private:
     QOpenGLBuffer arrayBuf;
+    QOpenGLBuffer colorBuf;
     std::vector<int> vertexCnts;
     const layout::dLayoutManager& layM;
 };

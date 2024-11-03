@@ -165,12 +165,13 @@ public:
         return cnt;
     }
 
-    void getVertices(std::vector<QVector3D>& vertices,
+    void getVerticesAndColors(std::vector<QVector3D>& vertices,
+                     std::vector<QVector4D>& colors,
                      std::vector<int>& vertexCnts) const {
         printf("draw cell=%s. %d vertices...\n", getName().c_str(), getVertexCount());
         typename tLayers::const_iterator it = layers.begin();
         for (; it != layers.end(); ++it) {
-            it->second->getVertices(vertices, vertexCnts);
+            it->second->getVerticesAndColors(vertices, colors, vertexCnts);
         }
     }
 }; // class Cell

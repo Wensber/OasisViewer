@@ -151,12 +151,13 @@ public:
         return cnt;
     }
 
-    void getVertices(std::vector<QVector3D>& vertices,
+    void getVerticesAndColors(std::vector<QVector3D>& vertices,
+                     std::vector<QVector4D>& colors,
                      std::vector<int>& vertexCnts) const {
         printf("draw layout=%s. %d vertices...\n", getName().c_str(), getVertexCount());
         typename tCells::const_iterator it = cells.begin();
         for (; it != cells.end(); ++it) {
-            it->second->getVertices(vertices, vertexCnts);
+            it->second->getVerticesAndColors(vertices, colors, vertexCnts);
         }
     }
 }; // class Layout

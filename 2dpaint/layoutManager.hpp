@@ -122,10 +122,11 @@ public:
             return activeLayout->getVertexCount();
         return 0;
     }
-    void getVertices(std::vector<QVector3D>& vertices,
+    void getVerticesAndColors(std::vector<QVector3D>& vertices,
+                     std::vector<QVector4D>& colors,
                      std::vector<int>& vertexCnts) const {
         if (activeLayout) {
-            activeLayout->getVertices(vertices, vertexCnts);
+            activeLayout->getVerticesAndColors(vertices, colors, vertexCnts);
         }
     }
 

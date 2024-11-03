@@ -14,6 +14,7 @@ GeometryEngine::GeometryEngine(const layout::dLayoutManager& _layM)
 
     // Generate 2 VBOs
     arrayBuf.create();
+    colorBuf.create();
 
     // Initializes layout geometries and transfers it to VBOs
     initLayoutGeometries();
@@ -21,6 +22,7 @@ GeometryEngine::GeometryEngine(const layout::dLayoutManager& _layM)
 
 GeometryEngine::~GeometryEngine() {
     arrayBuf.destroy();
+    colorBuf.destroy();
 }
 
 void GeometryEngine::initLayoutGeometries() {
@@ -30,13 +32,19 @@ void GeometryEngine::initLayoutGeometries() {
         int verCnt = activeLayout->getVertexCount();
         std::vector<QVector3D> vertices;
         vertices.reserve(verCnt);
+        std::vector<QVector4D> colors;
+        colors.reserve(verCnt);
         getVertexCounts().clear();
-        activeLayout->getVertices(vertices, getVertexCounts());
+        activeLayout->getVerticesAndColors(vertices, colors, getVertexCounts());
 
         // Transfer vertex data to VBO 0
         arrayBuf.bind();
         //arrayBuf.setUsagePattern(QGLBuffer::DynamicDraw);
         arrayBuf.allocate(vertices.data(), verCnt * sizeof(QVector3D));
+
+        // Transfer vertex color data to VBO 1
+        colorBuf.bind();
+        colorBuf.allocate(colors.data(), verCnt * sizeof(QVector4D));
     }
 }
 
@@ -55,6 +63,13 @@ void GeometryEngine::drawLayoutGeometries(QOpenGLShaderProgram* program) {
     // setAttributeBuffer(int location, GLenum type, int offset, int tupleSize, int stride = 0)
     program->setAttributeBuffer(vertexLocation, GL_FLOAT, 0, 3, sizeof(QVector3D));
 
+    // Tell OpenGL which VBOs to use
+    colorBuf.bind();
+
+    // Tell OpenGL programmable pipeline how to locate vetex color data
+    int colorLocation = program->attributeLocation("a_color");
+    program->enableAttributeArray(colorLocation);
+    program->setAttributeBuffer(colorLocation, GL_FLOAT, 0, 4, sizeof(QVector4D));
 #if 0
     // Tell OpenGL programmable pipeline how to locate vertex texture coordinate data
     int texcoordLocation = program->attributeLocation("a_texcoord");

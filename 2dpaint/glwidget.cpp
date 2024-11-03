@@ -6,7 +6,7 @@
 #include <QMouseEvent>
 #include <QRubberBand>
 
-float fov = 45.0;
+float fov = 60.0;
 QRubberBand *rubberBand = nullptr;
 
 
@@ -37,6 +37,15 @@ const layout::dBox& GLWidget::getViewBox() {
     const layout::dLayout* activeLayout = getLayoutManager().getActiveLayout();
     if (activeLayout) {
         viewBBox = activeLayout->getBBox();
+        double w = width();
+        w = (w) ?w :1.0;
+        double h = height();
+        // adjust viewBBox's width according to window's aspece ratio
+        double vw = viewBBox.getHeight()*w/h;
+        layout::dPoint center = viewBBox.center();
+        viewBBox.setMinX(center.x()-vw/2);
+        viewBBox.setMaxX(center.x()+vw/2);
+        // add some margin.
         viewBBox *= 1.01; // * getZoomFactor());
     } else {
         viewBBox.makeInvalid();
@@ -72,7 +81,7 @@ void GLWidget::mousePressEvent(QMouseEvent *e)
 {
     // Save mouse press position
     mousePressPos = e->position();
-    printf("mousePressPos: x=%.3lf, y=%.3lf\n", mousePressPos.x(), mousePressPos.y());
+    mousePressModel = model;
     if (getMouseMode() == Zoom) {
         if (!rubberBand) {
             rubberBand = new QRubberBand(QRubberBand::Rectangle, this);
@@ -88,12 +97,18 @@ void GLWidget::mouseMoveEvent(QMouseEvent *e) {
     // Mouse move position - mouse press position
     MouseModes mode = getMouseMode();
     QPointF pos = e->position();
+    const layout::dBox& vbox = getViewBox();
     if (mode == Zoom) {
-        printf("mouseMovePos: x=%.3lf, y=%.3lf\n", pos.x(), pos.y());
         rubberBand->resize(pos.x()-mousePressPos.x(), pos.y()-mousePressPos.y());
     } else if (mode == Pan) {
-        QVector2D diff = QVector2D(e->position()) - QVector2D(mousePressPos);
-        setPanDiff(diff);
+        model = mousePressModel;
+        QRectF mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                             vbox.getWidth(), vbox.getHeight()));
+        double scale = mapped.width() / vbox.getWidth();
+        QVector2D diff = QVector2D(e->position()-mousePressPos);
+        model.translate(vbox.getWidth()*diff.x()/(scale*width()),
+                        -vbox.getHeight()*diff.y()/(scale*height()),
+                        0.0);
         update();
     }
     return;
@@ -102,25 +117,89 @@ void GLWidget::mouseMoveEvent(QMouseEvent *e) {
 void GLWidget::mouseReleaseEvent(QMouseEvent *e)
 {
     // Mouse release position - mouse press position
-    QVector2D diff = QVector2D(e->position() - mousePressPos);
     MouseModes mode = getMouseMode();
     printf("mouseReleaseEvent: mode=%d.\n", mode);
+
+    const layout::dBox& vbox = getViewBox();
+
     if (mode == Zoom) {
+        QRectF mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                             vbox.getWidth(), vbox.getHeight()));
+
         rubberBand->hide();
-        setPannedDist(QVector2D(-mousePressPos.x(),
-                                -mousePressPos.y()));
         QRect band = rubberBand->geometry();
-        double factor = std::min(((double)band.width())/width(),
-                                 ((double)band.height())/height());
-        setZoomFactor(getZoomFactor()*sqrt(factor));
+        // factor to scale up the view.
+        double factor = (width()>height())
+                            ?height()/band.height()
+                            :width()/band.width();
+#if 0
+        QVector3D bcenter;
+        bcenter.setX(mapped.left()+band.center().x()*mapped.width()/width());
+        bcenter.setY(mapped.bottom()+band.center().y()*mapped.height()/height());
+        bcenter.setZ(layout::pointZval);
+
+        QVector3D mcenter;
+        mcenter.setX(mapped.center().x());
+        mcenter.setY(mapped.center().y());
+        mcenter.setZ(layout::pointZval);
+
+        // find the matrix mapping bcenter to mapped vbox center.
+        model.setToIdentity();
+        // set the target point as the new origin
+        model.translate(-mcenter.x(), mcenter.y());
+        // translate to bcenter
+        model.translate(bcenter.x(), -bcenter.y());
+#else
+        double scale = mapped.width() / vbox.getWidth();
+        QVector2D diff(width()/2.0 - band.center().x(),
+                       height()/2.0 - band.center().y());
+
+        //model.scale(factor/scale, factor/scale);
+        mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                      vbox.getWidth(), vbox.getHeight()));
+        /* adjust rubberband's box to match window's aspect ratio
+         * band' width/height = window's window/height;
+         * band.width() = width()*band.height() / height();
+         * if window's width > height:
+         *   factor = width() / band.width()
+         *          = width()*height() / (width()*band.height())
+         *          = height() / band.height();
+         * else if window's height > width:
+         *   factor = height() / band.height()
+         *          = width() / band.width();
+         */
+        model.translate(mapped.width()*diff.x()/width(),
+                        -mapped.height()*diff.y()/height(),
+                        0.0);
+#endif
+        //model.scale(factor/scale, factor/scale);
         update();
+    } else if (false) { //(mode == Pan){
+        model = mousePressModel;
+        QRectF mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                             vbox.getWidth(), vbox.getHeight()));
+        double scale = mapped.width() / vbox.getWidth();
+        QVector2D diff = QVector2D(e->position() - mousePressPos);
+        model.translate(vbox.getWidth()*diff.x()/(scale*width()),
+                        -vbox.getHeight()*diff.y()/(scale*height()),
+                        0.0);
+        update();
+
     } else if (mode == Pan){
-        setPannedDist(getPannedDist()+diff);
-        setPanDiff(QVector2D(0, 0));
+        model = mousePressModel;
+        QRectF mapped = model.mapRect(QRectF(vbox.getMinX(), vbox.getMinY(),
+                                             vbox.getWidth(), vbox.getHeight()));
+        double scale = mapped.width() / vbox.getWidth();
+        printf("pan scale=%.3lf\n", scale);
+        QVector2D diff = QVector2D(e->position() - mousePressPos);
+        model.translate(mapped.width()*diff.x()/width(),
+                        -mapped.height()*diff.y()/height(),
+                        0.0);
         update();
     } else if (mode == Rotate) {
         // Rotation axis is perpendicular to the mouse position difference
         // vector
+        QVector2D diff = QVector2D(e->position() - mousePressPos);
         QVector3D n = QVector3D(diff.y(), diff.x(), 0.0).normalized();
 
         // Accelerate angular speed relative to the length of the mouse sweep
@@ -190,12 +269,12 @@ void GLWidget::initShaders()
     #version 330
     uniform mat4 mvp_matrix;
     attribute vec4 a_position;
-    attribute vec2 a_texcoord;
-    varying vec2 v_texcoord;
+    attribute vec4 a_color;
+    out vec4 attrib_fragment_color;
     void main()
     {
         gl_Position = mvp_matrix * a_position;
-        v_texcoord = a_texcoord;
+        attrib_fragment_color = a_color;
     }
     )glsl";
     if (!program.addShaderFromSourceCode(QOpenGLShader::Vertex, vShaderSource))
@@ -209,11 +288,10 @@ void GLWidget::initShaders()
 #else
     const char fShaderSource[] = R"glsl(
     #version 330
-    uniform sampler2D texture;
-    varying vec2 v_texcoord;
+    in vec4 attrib_fragment_color;
     void main()
     {
-        gl_FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
+        gl_FragColor = attrib_fragment_color;
     }
     )glsl";
     if (!program.addShaderFromSourceCode(QOpenGLShader::Fragment, fShaderSource))
@@ -264,7 +342,6 @@ void GLWidget::resizeGL(int w, int h)
 void GLWidget::paintGL()
 {
     printf("paintGL...\n");
-
     // Clear color and depth buffer
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -275,8 +352,7 @@ void GLWidget::paintGL()
     QMatrix4x4 matrix;
     QVector3D eye = getEyeCoords();
     matrix.translate(eye.x(), eye.y(), eye.z());
-    matrix.scale(getZoomFactor(), getZoomFactor());
-    matrix.rotate(rotation);
+    matrix *= model;
 
     // Set modelview-projection matrix
     program.setUniformValue("mvp_matrix", projection * matrix);

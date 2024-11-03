@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <QVector3D>
+#include <QVector4D>
 
 
 namespace bg = boost::geometry;

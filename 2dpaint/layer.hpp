@@ -141,12 +141,19 @@ public:
         return vertexCnt;
     }
 
-    void getVertices(std::vector<QVector3D>& vertices,
+    void getVerticesAndColors(std::vector<QVector3D>& vertices,
+                     std::vector<QVector4D>& colors,
                      std::vector<int>& vertexCnts) const {
         printf("draw Layer %s: %d vertices...\n", getName().c_str(), getVertexCount());
         typename tShapes::const_iterator it = getShapes().begin();
         for (; it != getShapes().end(); ++it) {
             (*it)->getVertices(vertices, vertexCnts);
+            for (int i=0; i<vertexCnts.back(); ++i) {
+                colors.emplace_back(lyrColor.redF(),
+                                    lyrColor.greenF(),
+                                    lyrColor.blueF(),
+                                    lyrColor.alphaF());
+            }
         }
     }
 }; // class Layer

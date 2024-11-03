@@ -1,16 +1,22 @@
 #ifndef OASISIO_H
 #define OASISIO_H
 
+#include <bitset>
 #include <iostream>
-//#include <bitset>
+#include <bitset>
 #include <fstream>
 #include <vector>
+#include <iomanip>
 
 namespace oasisio {
 
 using byte = unsigned char;
 
-#define MAGIC "%SEMI-OASIS\r\n"
+
+namespace {
+const char* MAGIC = "%SEMI-OASIS\n";
+}
+
 #define VERSION "1.0"
 
 #define BINARY 1
@@ -32,6 +38,7 @@ using byte = unsigned char;
 #define DELTA_G1 3
 #define DELTA_G2 4
 #define DELTA_G 5
+
 
 class Delta {
 protected:
@@ -103,38 +110,54 @@ std::ostream& operator<<(std::ostream& o, const PointList& pl);
 
 class OasisWriter {
 
-public:
-    OasisWriter()
-    {}
+protected:
+    unsigned int pos = 1;
+    std::ofstream* f;
 
-    static void toBytesChar(std::ofstream& f, char c) {
-        char out[1] = {c};
-        f.write(out, 1);
+public:
+    OasisWriter(std::ofstream* ofs)
+        : f(ofs)
+    {
     }
 
-    static void toBytesReal(std::ofstream& f, int type, float flo) {
+    unsigned int getPos() {
+        return pos;
+    }
+
+    void increasePos(unsigned int i) {
+        pos += i;
+    }
+
+    void toBytesChar(char c) {
+        char out[1] = {c};
+        f->write(out, 1);
+        ++pos;
+    }
+
+    void toBytesReal(int type, float flo) {
 
         if(type < 0 || type > 7) {
             return;
         }
 
         char format[1] = {(char)type};
-        f.write(format, 1);
+        f->write(format, 1);
+        ++pos;
 
         switch(type){
         case POSITIVE_WHOLE:
         case NEGATIVE_WHOLE:
-            toBytesUnsigned(f, (unsigned int)flo);
+            toBytesUnsigned((unsigned int)flo);
             break;
         case POSITIVE_RECIPROCAL:
         case NEGATIVE_RECIPROCAL:
-            toBytesUnsigned(f, (unsigned int)flo);
+            toBytesUnsigned((unsigned int)flo);
             break;
         case SINGLE_PRECISION_FLOAT:
-            toBytesFloat(f, flo, true);
+            toBytesFloat(flo, true);
             break;
         case DOUBLE_PRECISION_FLOAT:
-            toBytesFloat(f, flo, false);
+            toBytesFloat(flo, false);
             break;
         default:
             throw std::exception("Type does not match input.");
@@ -142,20 +165,21 @@ public:
 
     }
 
-    static void toBytesReal(std::ofstream& f, int type, unsigned int i1, unsigned int i2) {
+    void toBytesReal(int type, unsigned int i1, unsigned int i2) {
 
         if(type < 0 || type > 7) {
             return;
         }
 
         char format[1] = {(char)type};
-        f.write(format, 1);
+        f->write(format, 1);
+        ++pos;
 
         switch(type){
         case POSITIVE_RATIO:
         case NEGATIVE_RATIO:
-            toBytesUnsigned(f, i1);
-            toBytesUnsigned(f, i2);
+            toBytesUnsigned(i1);
+            toBytesUnsigned(i2);
             break;
         default:
             throw std::exception("Type does not match input.");
@@ -163,82 +187,46 @@ public:
 
     }
 
-    static void toBytesUnsigned(std::ofstream& f, unsigned int u_int) {
+    void toBytesUnsigned(unsigned int u_int) {
 
-        byte out[4] = {0};
+        byte out[1] = {0};
         byte mask = 127;
 
-        int i = -1;
+        if(u_int == 0) {
+            f->write((char *)out, 1);
+            ++pos;
+            //std::cout << std::bitset<8>((int)out[0]).to_string() << std::endl;
+            return;
+        }
+
         while(u_int > 0) {
-            ++i;
-            if(i >= 4){
-                throw std::exception("Not enough memory.");
-            }
-            byte next = (u_int & mask) + 128;
+            out[0] = (u_int & mask) + 128;
             u_int = u_int >> 7;
-            out[i] = next;
-        }
-
-        if(i >= 0) {
-            out[i] = out[i] & mask;
-        }
-
-        /*
-        int j;
-        for(j=0; j<4; ++j) {
-            std::cout << std::bitset<8>((int)out[j]).to_string() << " ";
-        }
-        std::cout << std::endl;
-        */
-
-        f.write((char *)out, sizeof(out));
-
-    }
-
-    static void toBytesSigned(std::ofstream& f, signed int s_int) {
-
-        byte out[4] = {0};
-        byte mask = 127;
-        bool negative = s_int < 0;
-        if(negative) {
-            s_int = s_int * -1;
-        }
-
-        byte first = ((s_int & 63) << 1) + 128;
-        s_int = s_int >> 6;
-        if(negative) {
-            ++first;
-        }
-        out[0] = first;
-
-        int i = 0;
-        while(s_int > 0) {
-            ++i;
-            if(i >= 4){
-                throw std::exception("Not enough memory.");
+            if(u_int <= 0) {
+                out[0] = out[0] & mask;
             }
-            byte next = (s_int & mask) + 128;
-            s_int = s_int >> 7;
-            out[i] = next;
+            f->write((char *)out, 1);
+            ++pos;
+            //std::cout << std::bitset<8>((int)out[0]).to_string() << " ";
         }
-
-        if(i >= 0) {
-            out[i] = out[i] & mask;
-        }
-
-        /*
-        int j;
-        for(j=0; j<4; ++j) {
-            std::cout << std::bitset<8>((int)out[j]).to_string() << " ";
-        }
-        std::cout << std::endl;
-        */
-
-        f.write((char *)out, sizeof(out));
+        //std::cout << std::endl;
 
     }
 
-    static void toBytesFloat(std::ofstream& f, float fl, bool singlePrec) {
+    void toBytesSigned(signed int s_int) {
+
+
+        bool negative = s_int < 0;
+        unsigned int new_int = abs(s_int) << 1;
+        if(negative) {
+            ++new_int;
+        }
+
+        toBytesUnsigned(new_int);
+
+    }
+
+    void toBytesFloat(float fl, bool singlePrec) {
 
         int size, expoBias, expoPos, expoLen;
         if(singlePrec) {
@@ -297,12 +285,13 @@ public:
         std::cout << std::endl;
         */
 
-        f.write((char *)out, size);
+        f->write((char *)out, size);
+        pos += size;
 
     }
 
 
-    static void setBit(int pos, int len, long long num, byte* out, int size) {
+    void setBit(int pos, int len, long long num, byte* out, int size) {
 
         int index = size - (pos / 8) - 1;
         int bit = pos % 8 ;
@@ -336,7 +325,7 @@ public:
 
     }
 
-    static int mostSigBit(long long n) {
+    int mostSigBit(long long n) {
         int i = -1;
         while(n > 0) {
             ++i;
@@ -345,7 +334,7 @@ public:
         return i;
     }
 
-    static void toBytesString(std::ofstream& f, std::string s, int type = BINARY) {
+    void toBytesString(std::string s, int type = BINARY) {
 
         char* data = s.data();
         char len = (char)s.length();
@@ -377,12 +366,13 @@ public:
 
         char length[1] = {len};
 
-        f.write(length, 1);
-        f.write(data, len);
+        f->write(length, 1);
+        f->write(data, len);
+        pos += (len+1);
 
     }
 
-    static bool printable(char* data, int len, bool space = true) {
+    bool printable(char* data, int len, bool space = true) {
         int i;
         for(i=0; i<len; ++i) {
             if( (data[i] < 33 || data[i] > 126) && (!space || data[i] != ' ') ) {
@@ -392,7 +382,7 @@ public:
         return true;
     }
 
-    static void toBytesDelta(std::ofstream& f, const Delta& d) {
+    void toBytesDelta(const Delta& d) {
 
         switch(d.getType()) {
         case DELTA_1:
@@ -400,9 +390,9 @@ public:
                 throw std::exception("Invalid delta.");
             }
             if(d.getDeltaX() != 0) {
-                toBytesSigned(f, d.getDeltaX());
+                toBytesSigned(d.getDeltaX());
             } else {
-                toBytesSigned(f, d.getDeltaY());
+                toBytesSigned(d.getDeltaY());
             }
             break;
 
@@ -418,7 +408,7 @@ public:
                 } else {
                     delta = (delta << 2);
                 }
-                toBytesUnsigned(f, delta);
+                toBytesUnsigned(delta);
             } else {
                 unsigned int delta = abs(d.getDeltaY());
                 if(d.getDeltaY() < 0) {
@@ -426,7 +416,7 @@ public:
                 } else {
                     delta = (delta << 2) + 1;
                 }
-                toBytesUnsigned(f, delta);
+                toBytesUnsigned(delta);
             }
             break;
         }
@@ -455,7 +445,7 @@ public:
             } else if( d.getDeltaX() >= 0 && d.getDeltaY() < 0 ) {
                 delta += 7;
             }
-            toBytesUnsigned(f, delta);
+            toBytesUnsigned(delta);
             break;
         }
 
@@ -484,7 +474,7 @@ public:
                 delta += 7;
             }
             delta = delta << 1;
-            toBytesUnsigned(f, delta);
+            toBytesUnsigned(delta);
             break;
         }
 
@@ -495,8 +485,8 @@ public:
             if(d.getDeltaX() < 0) {
                 deltaX += 2;
             }
-            toBytesUnsigned(f, deltaX);
-            toBytesSigned(f, d.getDeltaY());
+            toBytesUnsigned(deltaX);
+            toBytesSigned(d.getDeltaY());
             break;
         }
 
@@ -504,14 +494,14 @@ public:
 
     }
 
-    static void toBytesPointList(std::ofstream& f, const PointList& pl) {
+    void toBytesPointList(const PointList& pl) {
 
-        toBytesUnsigned(f, pl.getType());
-        toBytesUnsigned(f, (unsigned int)(pl.getList().size()));
+        toBytesUnsigned(pl.getType());
+        toBytesUnsigned((unsigned int)(pl.getList().size()));
 
         int i;
         for(i=0; i<pl.getList().size(); ++i) {
-            toBytesDelta(f, pl.getList()[i]);
+            toBytesDelta(pl.getList()[i]);
         }
 
     }
@@ -595,56 +585,37 @@ public:
 
     static unsigned int fromBytesUnsigned(std::ifstream& f) {
 
-        byte bytes[4] = {0};
-        f.read((char *)bytes, 4);
+        byte bytes[1] = {0};
+
 
         byte mask = 127;
         unsigned int out = 0;
 
-        int i = 0;
-        while( (128 & bytes[i]) > 0) {
+        unsigned int i = -1;
+        while(true) {
             ++i;
+            bytes[0] = {0};
+            f.read((char *)bytes, 1);
+            //std::cout << std::bitset<8>((int)bytes[0]).to_string() << " ";
+            //std::cout << std::setw(2) << std::setfill('0') << std::hex << (int)(bytes[0]) << " ";
+            byte next = bytes[0] & mask;
+            out += (next << (7*i));
+            if((bytes[0] & 128) == 0 || f.eof()) {
+                break;
+            }
         }
-
-        for(; i>=0; i--) {
-            byte next = bytes[i] & mask;
-            out = (out << 7) + next;
-        }
+        //std::cout << std::endl;
 
         return out;
     }
 
     static signed int fromBytesSigned(std::ifstream& f) {
 
-        byte bytes[4] = {0};
-        f.read((char *)bytes, 4);
-
-        /*
-        std::cout << "Output :" << std::endl;
-        int j;
-        for(j=0; j<4; ++j) {
-            std::cout << std::bitset<8>((int)bytes[j]).to_string() << " ";
-        }
-        std::cout << std::endl;
-        */
-
-        byte mask = 127;
-        unsigned int out = 0;
-        bool negative = (bytes[0] & 1);
-
-        int i = 0;
-        while( (128 & bytes[i]) > 0) {
-            ++i;
-        }
-
-        for(; i>=1; i--) {
-            byte next = bytes[i] & mask;
-            out = (out << 7) + next;
-        }
-        byte last = (bytes[0] >> 1) & 63;
-        out = (out << 6) + last;
+        unsigned int initial = fromBytesUnsigned(f);
+        bool negative = initial & 1;
+        int out = initial >> 1;
         if(negative) {
-            out = out * -1;
+            out *= -1;
         }
 
         return out;

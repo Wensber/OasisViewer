@@ -69,6 +69,7 @@ public:
 
             while(true) {
                 unsigned int recordID = OasisReader::fromBytesUnsigned(ifs);
+                std::cout << "Record ID " << recordID << std::endl;
                 if(recordID != 4) {
                     break;
                 }
@@ -98,6 +99,7 @@ public:
 
             while(true) {
                 unsigned int recordID = OasisReader::fromBytesUnsigned(ifs);
+                std::cout << "Record ID " << recordID << std::endl;
                 if(recordID != 11) {
                     break;
                 }
@@ -242,19 +244,31 @@ public:
 
     void readOasisFile(std::ifstream& ifs, layout::Layout<pointT>& outLayout) {
 
-        std::string magic = OasisReader::fromBytesString(ifs);
-        if(magic != MAGIC) {
-            throw std::exception("Failed to find magic bytes.");
-        }
+        std::cout << "Start Reader" << std::endl;
 
+        char magic[12] = {0};
+        ifs.read(magic, 12);
+        int i;
+        for(i=0; i<12; ++i) {
+            //std::cout << std::hex << (int)(magic[i]) << " ";
+            if(magic[i] != MAGIC[i]) {
+                std::cout << std::endl << "Mismatch";
+                throw std::exception("Magic bytes do not match.");
+            }
+        }
+        //std::cout << std::endl;
+
+        std::cout << "Start Record" << std::endl;
 
         TableOffsets table = readStartRecord(ifs);
         std::cout << table << std::endl;
-        std::cout << "Current Pos : " << (int)ifs.tellg() << std::endl;
+        std::cout << "Extract Cellnames" << std::endl;
         table.extractCellnames(ifs);
+        std::cout << "Extract Layernames" << std::endl;
         table.extractLayernames(ifs);
         std::map<unsigned int, std::string>& cellnames = table.getCellnames();
 
+        std::cout << "Cells" << std::endl;
 
         //Read in Records
         bool done = false;
@@ -277,8 +291,8 @@ public:
                 if(table.getCellnameFlag() == 1) { //Strict
                     char len[1]; //String length
                     ifs.read(len, 1);
-                    std::cout << "Skip " << len[0]+4 << " bytes" << std::endl;
-                    ifs.seekg(len[0]+4, ifs.cur);
+                    std::cout << "Skip " << len[0]+1 << " bytes" << std::endl;
+                    ifs.seekg(len[0]+1, ifs.cur);
                 } else {
                     std::string cellname = OasisReader::fromBytesString(ifs);
                     unsigned int reference = OasisReader::fromBytesUnsigned(ifs);
@@ -294,8 +308,8 @@ public:
                 if(table.getLayernameFlag() == 1) {
                     char len[1]; //String length
                     ifs.read(len, 1);
-                    std::cout << "Skip " << len[0]+16 << " bytes" << std::endl;
-                    ifs.seekg(len[0]+16, ifs.cur);
+                    std::cout << "Skip " << len[0]+4 << " bytes" << std::endl;
+                    ifs.seekg(len[0]+4, ifs.cur);
                 } else {
                     unsigned int li1, li2, di1, di2;
                     std::string layername = OasisReader::fromBytesString(ifs);
@@ -346,21 +360,27 @@ public:
 
     void writeOasisFile(const layout::Layout<pointT>* layout, std::string name) {
 
+        std::cout << "Start Writer" << std::endl;
+
         std::ofstream ofs;
-        ofs.open(name, std::ios::trunc);
+        OasisWriter ow(&ofs);
+
+        ofs.open(name, std::ios::out);
 
         //magic bytes
-        OasisWriter::toBytesString(ofs, MAGIC);
+
+        ofs.write(MAGIC, 12);
+        ow.increasePos(12);
 
         //Start Record
 
         //Record ID
-        OasisWriter::toBytesUnsigned(ofs, 1);
-        OasisWriter::toBytesString(ofs, VERSION);
-        //Unit - Placeholder, figure out method of determining unit
-        OasisWriter::toBytesReal(ofs, SINGLE_PRECISION_FLOAT, 1.0f);
+        ow.toBytesUnsigned(1);
+        ow.toBytesString(VERSION);
+        //Unit
+        ow.toBytesReal(POSITIVE_WHOLE, 1000);
         //offset-flag, Table Offsets stored in End Record
-        OasisWriter::toBytesUnsigned(ofs, 1);
+        ow.toBytesUnsigned(1);
 
         TableOffsets table( 1, 0,
                            1, 0,
@@ -369,6 +389,7 @@ public:
                            1, 0,
                            1, 0 );
 
+        std::cout << "Writing Cells" << std::endl;
         //Cells
         typename std::map<std::string, layout::Cell<pointT>*>::const_iterator it;
         for(it = layout->getCells().begin(); it != layout->getCells().end(); ++it) {
@@ -378,39 +399,44 @@ public:
             unsigned int ref = table.addCellname(cell->getName());
 
             //Record ID
-            OasisWriter::toBytesUnsigned(ofs, 13);
+            ow.toBytesUnsigned(13);
             //Reference Number
-            OasisWriter::toBytesUnsigned(ofs, ref);
+            ow.toBytesUnsigned(ref);
+            //XYABSOLUTE record
+            ow.toBytesUnsigned(15);
 
-            writeCellRecord(ofs, table, cell);
+            writeCellRecord(ow, table, cell);
 
         }
 
 
+        std::cout << "Cellnames" << std::endl;
         //Cellname Records
         if(table.getCellnames().size() > 0) {
 
-            unsigned int pos = ofs.tellp();
+            unsigned int pos = ow.getPos();
             table.setCellnameOffset(pos);
+            std::cout << ofs.tellp() << std::endl;
 
             typename std::map<unsigned int, std::string>::const_iterator it2 = table.getCellnames().begin();
             for(; it2 != table.getCellnames().end(); ++it2) {
 
                 //Record ID
-                OasisWriter::toBytesUnsigned(ofs, 4);
+                ow.toBytesUnsigned(4);
                 //Name String
-                OasisWriter::toBytesString(ofs, it2->second);
+                ow.toBytesString(it2->second);
                 //Reference Number
-                OasisWriter::toBytesUnsigned(ofs, it2->first);
+                ow.toBytesUnsigned(it2->first);
 
             }
 
         }
 
+        std::cout << "Layernames" << std::endl;
         //Layername Records
         if(table.getLayernames().size() > 0) {
 
-            unsigned int pos = ofs.tellp();
+            unsigned int pos = ow.getPos();
             table.setLayernameOffset(pos);
 
             typename std::map<std::tuple<unsigned int, unsigned int, unsigned int, unsigned int>, std::string>::const_iterator it = table.getLayernames().begin();
@@ -419,19 +445,19 @@ public:
                 //Only handling Type 3 intervals right now
 
                 //Record ID
-                OasisWriter::toBytesUnsigned(ofs, 11);
+                ow.toBytesUnsigned(11);
                 //Layer Name
-                OasisWriter::toBytesString(ofs, it->second);
+                ow.toBytesString(it->second);
 
                 //Layer Name Interval Type
-                OasisWriter::toBytesUnsigned(ofs, 3);
+                ow.toBytesUnsigned(3);
                 //Bound
-                OasisWriter::toBytesUnsigned(ofs, std::get<0>(it->first));
+                ow.toBytesUnsigned(std::get<0>(it->first));
 
                 //Datatype Interval Type
-                OasisWriter::toBytesUnsigned(ofs, 3);
+                ow.toBytesUnsigned(3);
                 //Bound
-                OasisWriter::toBytesUnsigned(ofs, std::get<2>(it->first));
+                ow.toBytesUnsigned(std::get<2>(it->first));
 
             }
 
@@ -440,41 +466,43 @@ public:
         //Other Name Records go here
 
 
-
         //End Record
 
         //Record ID
-        OasisWriter::toBytesUnsigned(ofs, 2);
+        ow.toBytesUnsigned(2);
+
+        std::cout << table << std::endl;
 
         //Table Offsets
-        OasisWriter::toBytesUnsigned(ofs, table.getCellnameFlag());
-        OasisWriter::toBytesUnsigned(ofs, table.getCellnameOffset());
+        ow.toBytesUnsigned(table.getCellnameFlag());
+        ow.toBytesUnsigned(table.getCellnameOffset());
 
-        OasisWriter::toBytesUnsigned(ofs, table.getTextstringFlag());
-        OasisWriter::toBytesUnsigned(ofs, table.getTextstringOffset());
+        ow.toBytesUnsigned(table.getTextstringFlag());
+        ow.toBytesUnsigned(table.getTextstringOffset());
 
-        OasisWriter::toBytesUnsigned(ofs, table.getPropnameFlag());
-        OasisWriter::toBytesUnsigned(ofs, table.getPropnameOffset());
+        ow.toBytesUnsigned(table.getPropnameFlag());
+        ow.toBytesUnsigned(table.getPropnameOffset());
 
-        OasisWriter::toBytesUnsigned(ofs, table.getPropstringFlag());
-        OasisWriter::toBytesUnsigned(ofs, table.getPropstringOffset());
+        ow.toBytesUnsigned(table.getPropstringFlag());
+        ow.toBytesUnsigned(table.getPropstringOffset());
 
-        OasisWriter::toBytesUnsigned(ofs, table.getLayernameFlag());
-        OasisWriter::toBytesUnsigned(ofs, table.getLayernameOffset());
+        ow.toBytesUnsigned(table.getLayernameFlag());
+        ow.toBytesUnsigned(table.getLayernameOffset());
 
-        OasisWriter::toBytesUnsigned(ofs, table.getXnameFlag());
-        OasisWriter::toBytesUnsigned(ofs, table.getXnameOffset());
+        ow.toBytesUnsigned(table.getXnameFlag());
+        ow.toBytesUnsigned(table.getXnameOffset());
 
-        unsigned int numPadding = 256 - 4 - (4 * 12) - 4;
+        unsigned int numPadding = 256 - 1 - tableNumBytes(table) - 1;
         unsigned int i;
         for(i=0; i<numPadding; ++i) {
-            OasisWriter::toBytesChar(ofs, 0);
+            ow.toBytesChar(0);
         }
 
         //Validation Scheme - None
-        OasisWriter::toBytesUnsigned(ofs, 0);
+        ow.toBytesUnsigned(0);
 
         ofs.close();
+        std::cout << "End Writer" << std::endl;
 
     }
 
@@ -484,10 +512,11 @@ protected:
     TableOffsets readStartRecord(std::ifstream& ifs) {
 
         unsigned int recordID = OasisReader::fromBytesUnsigned(ifs);
+        std::cout << "Record ID " << recordID << std::endl;
         if(recordID != 1) {
+            std::cout << "No Start Record ID" << std::endl;
             throw std::exception("Failed to find Start Record.");
         }
-        std::cout << "Start Record ID : " << recordID << std::endl;
 
         std::string version = OasisReader::fromBytesString(ifs);
         if(version != VERSION) {
@@ -505,7 +534,7 @@ protected:
         int curPos = ifs.tellg();
         std::cout << "Current Pos : " << curPos << std::endl;
         if(offsetFlag == 1) {
-            ifs.seekg(-252, ifs.end);
+            ifs.seekg(-255, ifs.end);
         }
 
         unsigned int cellnameFlag = OasisReader::fromBytesUnsigned(ifs);
@@ -537,18 +566,20 @@ protected:
     }
 
 
-    void writeCellRecord(std::ofstream& ofs, TableOffsets& table, const layout::Cell<pointT>* cell) {
+    void writeCellRecord(OasisWriter& ow, TableOffsets& table, const layout::Cell<pointT>* cell) {
 
+        std::cout << "Write Cell Record" << std::endl;
         typename std::map<std::string, layout::Layer<pointT>*>::const_iterator it;
         for(it = cell->getLayers().begin(); it != cell->getLayers().end(); ++it) {
 
             const layout::Layer<pointT>* layer = it->second;
             table.addLayername(layer->getName(), layer->getLayerNum(), layer->getLayerNum(), layer->getDataType(), layer->getDataType());
 
-            std::cout << "Reading Shapes" << std::endl;
             for(layout::iShape<pointT>* shape : layer->getShapes()) {
 
                 if(shape->getShapeType() == BOX) {
+
+                    std::cout << "Box" << std::endl;
 
                     layout::Box<pointT>* box = (layout::Box<pointT>*) shape;
                     unsigned char rectangle_info = 0;
@@ -574,25 +605,27 @@ protected:
                     rectangle_info += (square ? 128 : 0);
 
                     //Record ID
-                    OasisWriter::toBytesUnsigned(ofs, 20);
+                    ow.toBytesUnsigned(20);
                     //Rectangle Info
-                    OasisWriter::toBytesChar(ofs, rectangle_info);
+                    ow.toBytesChar(rectangle_info);
                     //Layer Number
-                    OasisWriter::toBytesUnsigned(ofs, layer->getLayerNum());
+                    ow.toBytesUnsigned(layer->getLayerNum());
                     //Datatype
-                    OasisWriter::toBytesUnsigned(ofs, layer->getDataType());
+                    ow.toBytesUnsigned(layer->getDataType());
                     //Width
-                    OasisWriter::toBytesUnsigned(ofs, width);
+                    ow.toBytesUnsigned(width);
                     //Height
-                    if(!square) {
-                        OasisWriter::toBytesUnsigned(ofs, height);
+                    if(true) { // !square?? already specify H is 1.) {
+                        ow.toBytesUnsigned(height);
                     }
                     //X
-                    OasisWriter::toBytesSigned(ofs, box->getMinX());
+                    ow.toBytesSigned(box->getMinX());
                     //Y
-                    OasisWriter::toBytesSigned(ofs, box->getMinY());
+                    ow.toBytesSigned(box->getMinY());
 
                 } else if(shape->getShapeType() == POLYGON) {
+
+                    std::cout << "Polygon" << std::endl;
 
                     layout::Polygon<pointT>* polygon = (layout::Polygon<pointT>*) shape;
                     std::vector<QVector3D> vertices;
@@ -601,6 +634,7 @@ protected:
                     oasisio::PointList pointList(POINT_LIST_4);
                     fillPointList(pointList, vertices);
 
+                    /*
                     std::cout << "Write Point List" << std::endl;
                     int i;
                     for(i=0; i<pointList.getList().size(); ++i) {
@@ -608,6 +642,7 @@ protected:
                                             pointList.getList().at(i).getDeltaY() << ") ";
                     }
                     std::cout << std::endl;
+                    */
 
                     unsigned char polygon_info = 0;
 
@@ -625,21 +660,23 @@ protected:
                     polygon_info += 32;
 
                     //Record ID
-                    OasisWriter::toBytesUnsigned(ofs, 21);
+                    ow.toBytesUnsigned(21);
                     //Polygon Info
-                    OasisWriter::toBytesChar(ofs, polygon_info);
+                    ow.toBytesChar(polygon_info);
                     //Layer Number
-                    OasisWriter::toBytesUnsigned(ofs, layer->getLayerNum());
+                    ow.toBytesUnsigned(layer->getLayerNum());
                     //Datatype
-                    OasisWriter::toBytesUnsigned(ofs, layer->getDataType());
+                    ow.toBytesUnsigned(layer->getDataType());
                     //Point List
-                    OasisWriter::toBytesPointList(ofs, pointList);
+                    ow.toBytesPointList(pointList);
                     //X
-                    OasisWriter::toBytesSigned(ofs, (int)vertices.at(0).x());
+                    ow.toBytesSigned((int)vertices.at(0).x());
                     //Y
-                    OasisWriter::toBytesSigned(ofs, (int)vertices.at(0).y());
+                    ow.toBytesSigned((int)vertices.at(0).y());
 
                 } else if(shape->getShapeType() == CIRCLE) {
+
+                    std::cout << "Circle" << std::endl;
 
                     layout::Circle<pointT>* circle = (layout::Circle<pointT>*) shape;
                     unsigned int radius = circle->getRadius();
@@ -661,6 +698,7 @@ protected:
                     //r
                     circle_info += 32;
 
+                    /*
                     std::cout << "Writing Circle" << std::endl;
                     std::cout << "Circle Info " << std::bitset<8>((int)circle_info).to_string() << std::endl;
                     std::cout << "Layer Num " << layer->getLayerNum() << std::endl;
@@ -668,21 +706,22 @@ protected:
                     std::cout << "Radius " << radius << std::endl;
                     std::cout << "X " << x << std::endl;
                     std::cout << "Y " << y << std::endl;
+                    */
 
                     //Record ID
-                    OasisWriter::toBytesUnsigned(ofs, 27);
+                    ow.toBytesUnsigned(27);
                     //Circle Info
-                    OasisWriter::toBytesChar(ofs, circle_info);
+                    ow.toBytesChar(circle_info);
                     //Layer Number
-                    OasisWriter::toBytesUnsigned(ofs, layer->getLayerNum());
+                    ow.toBytesUnsigned(layer->getLayerNum());
                     //Datatype
-                    OasisWriter::toBytesUnsigned(ofs, layer->getDataType());
+                    ow.toBytesUnsigned(layer->getDataType());
                     //Radius
-                    OasisWriter::toBytesUnsigned(ofs, radius);
+                    ow.toBytesUnsigned(radius);
                     //X
-                    OasisWriter::toBytesSigned(ofs, x);
+                    ow.toBytesSigned(x);
                     //Y
-                    OasisWriter::toBytesSigned(ofs, y);
+                    ow.toBytesSigned(y);
 
                 }
 
@@ -694,7 +733,7 @@ protected:
 
     void fillPointList(oasisio::PointList& pointList, const std::vector<QVector3D>& vertices) {
 
-        pointList.addDelta(DELTA_G2, 0, 0);
+        //pointList.addDelta(DELTA_G2, 0, 0);
 
         int i;
         for(i=1; i<vertices.size(); ++i) {
@@ -765,8 +804,18 @@ protected:
 
                 layout::Layer<pointT>* layer = cell->getLayer(layernum, datatype);
                 if(layer == nullptr) {
-                    QColor red(255, 0, 0);
-                    layer = cell->newLayer(layernum, datatype, red);
+                    switch(layernum) {
+                    case 2:
+                        layer = cell->newLayer(layernum, datatype, QColor("green"));
+                        break;
+                    case 3:
+                        layer = cell->newLayer(layernum, datatype, QColor("yellow"));
+                        break;
+                    case 1:
+                    default:
+                        layer = cell->newLayer(layernum, datatype, QColor("red"));
+                        break;
+                    }
                     typename std::map<std::tuple<unsigned int, unsigned int, unsigned int, unsigned int>, std::string>::const_iterator it = table.getLayernames().begin();
                     for(; it != table.getLayernames().end(); ++it) {
                         if(layernum >= std::get<0>(it->first) && layernum <= std::get<1>(it->first) &&
@@ -824,8 +873,18 @@ protected:
 
                 layout::Layer<pointT>* layer = cell->getLayer(layernum, datatype);
                 if(layer == nullptr) {
-                    QColor red(255, 0, 0);
-                    layer = cell->newLayer(layernum, datatype, red);
+                    switch(layernum) {
+                    case 2:
+                        layer = cell->newLayer(layernum, datatype, QColor("green"));
+                        break;
+                    case 3:
+                        layer = cell->newLayer(layernum, datatype, QColor("yellow"));
+                        break;
+                    case 1:
+                    default:
+                        layer = cell->newLayer(layernum, datatype, QColor("red"));
+                        break;
+                    }
                     typename std::map<std::tuple<unsigned int, unsigned int, unsigned int, unsigned int>, std::string>::const_iterator it = table.getLayernames().begin();
                     for(; it != table.getLayernames().end(); ++it) {
                         if(layernum >= std::get<0>(it->first) && layernum <= std::get<1>(it->first) &&
@@ -885,8 +944,18 @@ protected:
 
                 layout::Layer<pointT>* layer = cell->getLayer(layernum, datatype);
                 if(layer == nullptr) {
-                    QColor red(255, 0, 0);
-                    layer = cell->newLayer(layernum, datatype, red);
+                    switch(layernum) {
+                    case 2:
+                        layer = cell->newLayer(layernum, datatype, QColor("green"));
+                        break;
+                    case 3:
+                        layer = cell->newLayer(layernum, datatype, QColor("yellow"));
+                        break;
+                    case 1:
+                    default:
+                        layer = cell->newLayer(layernum, datatype, QColor("red"));
+                        break;
+                    }
                     typename std::map<std::tuple<unsigned int, unsigned int, unsigned int, unsigned int>, std::string>::const_iterator it = table.getLayernames().begin();
                     for(; it != table.getLayernames().end(); ++it) {
                         if(layernum >= std::get<0>(it->first) && layernum <= std::get<1>(it->first) &&
@@ -904,15 +973,57 @@ protected:
 
                 break;
             }
+            case 15:
+                break;
             case 13:
             case 2:
             default:
-                ifs.seekg(-4, ifs.cur);
+                ifs.seekg(-1, ifs.cur);
                 return;
             }
 
         }
 
+    }
+
+    int tableNumBytes(const TableOffsets& table) {
+
+        int num = 0;
+        num += intNumBytes(table.getCellnameFlag());
+        num += intNumBytes(table.getCellnameOffset());
+        num += intNumBytes(table.getTextstringFlag());
+        num += intNumBytes(table.getTextstringOffset());
+        num += intNumBytes(table.getPropnameFlag());
+        num += intNumBytes(table.getPropnameOffset());
+        num += intNumBytes(table.getPropstringFlag());
+        num += intNumBytes(table.getPropstringOffset());
+        num += intNumBytes(table.getLayernameFlag());
+        num += intNumBytes(table.getLayernameOffset());
+        num += intNumBytes(table.getXnameFlag());
+        num += intNumBytes(table.getXnameOffset());
+
+        std::cout << "Table Num Bytes " << num << std::endl;
+
+        return num;
+
+    }
+
+    int intNumBytes(unsigned int i) {
+
+        //std::cout << i << " ";
+
+        int num = 1;
+        while(true) {
+            i = i >> 7;
+            if(i > 0) {
+                ++num;
+            } else {
+                break;
+            }
+        }
+
+        //std::cout << num << std::endl;
+        return num;
 
     }
 
