@@ -145,7 +145,7 @@ void MainWindow::createViewMenu() {
     rotateAct->setObjectName("View.Rotate");
     rotateAct->setCheckable(true);
     rotateAct->setShortcut(QKeySequence(tr("Ctrl+R")));
-    viewMenu->addAction(rotateAct);
+    //viewMenu->addAction(rotateAct);
 
     connect(zoomFullAct, &QAction::triggered, getGLWidget(), &GLWidget::onZoomFull);
     connect(zoomInHalfAct, &QAction::triggered, getGLWidget(), &GLWidget::onZoomInHalf);

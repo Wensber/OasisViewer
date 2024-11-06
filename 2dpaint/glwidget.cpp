@@ -192,8 +192,8 @@ void GLWidget::mouseReleaseEvent(QMouseEvent *e)
         double scale = mapped.width() / vbox.getWidth();
         printf("pan scale=%.3lf\n", scale);
         QVector2D diff = QVector2D(e->position() - mousePressPos);
-        model.translate(mapped.width()*diff.x()/width(),
-                        -mapped.height()*diff.y()/height(),
+        model.translate(vbox.getWidth()*diff.x()/(scale*width()),
+                        -vbox.getHeight()*diff.y()/(scale*height()),
                         0.0);
         update();
     } else if (mode == Rotate) {
